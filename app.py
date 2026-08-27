@@ -3,10 +3,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from PySide6.QtCore import Qt, QPointF, Slot
-from PySide6.QtGui import QAction, QImage, QPixmap, QTransform, QPainter, QPen, QColor
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QPushButton, QVBoxLayout, QFileDialog, QMessageBox, QLabel, QListWidget, QListWidgetItem, QSplitter, QToolBar, QComboBox, QColorDialog
+from PySide6.QtGui import QAction, QImage, QPixmap, QTransform, QPainter, QPen, QColor, QShowEvent
+from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QGraphicsTransform, QGraphicsRotation, QApplication, QMainWindow, QWidget, QPushButton, QVBoxLayout, QFileDialog, QMessageBox, QLabel, QListWidget, QListWidgetItem, QSplitter, QToolBar, QComboBox, QColorDialog
 from PySide6.QtMultimedia import QCamera, QImageCapture, QMediaCaptureSession
-from PySide6.QtMultimediaWidgets import QVideoWidget
+from PySide6.QtMultimediaWidgets import QVideoWidget, QGraphicsVideoItem
 from PIL import Image
 import fitz
 
@@ -79,31 +79,41 @@ class CameraApp(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PySide6 Camera App")
-        self.resize(800, 600)
+        self.resize(517, 704)
+
+        # 0. Setup scene view
+        self.layout = QVBoxLayout(self)
+        self.scene = QGraphicsScene(self)
+        self.view = QGraphicsView(self.scene, self)
+
+
+        self.video_item = QGraphicsVideoItem()
+        self.scene.addItem(self.video_item)
+
+        self.video_item.setTransformOriginPoint(self.video_item.boundingRect().center())
+        self.video_item.setRotation(90)
 
         # 1. Setup Multimedia Core Classes
         self.camera = QCamera()
         self.image_capture = QImageCapture()
         self.capture_session = QMediaCaptureSession()
-        self.video_sink = QVideoSink()
         
         # Connect everything to the central session
         self.capture_session.setCamera(self.camera)
         self.capture_session.setImageCapture(self.image_capture)
 
         # 2. Setup GUI Layout and Video Preview Widget
-        self.video_widget = QVideoWidget()
-        self.capture_session.setVideoOutput(self.video_widget)
+        self.capture_session.setVideoOutput(self.video_item)
 
         self.capture_button = QPushButton("Take Picture")
         self.capture_button.clicked.connect(self.take_picture)
 
         # Arrange Layout
-        layout = QVBoxLayout()
-        layout.addWidget(self.video_widget)
-        layout.addWidget(self.capture_button)
+        self.layout.addWidget(self.capture_button)
 
-        self.setLayout(layout)
+        self.layout.addWidget(self.view)
+
+        self.setLayout(self.layout)
         """container = QWidget()
         container.setLayout(layout)
         self.setCentralWidget(container)"""
@@ -111,6 +121,24 @@ class CameraApp(QWidget):
         # 3. Connect Signals & Start Camera
         self.image_capture.imageSaved.connect(self.on_image_saved)
         self.camera.start()
+        self.fit_screen()
+
+    def resizeEvent(self, event):
+        """Ensure the rotated video scales correctly when window resizes."""
+        super().resizeEvent(event)
+        self.fit_screen()
+
+    def showEvent(self, event: QShowEvent):
+        super().showEvent(event)
+        self.fit_screen()
+        # Place your code here when the widget opens/shows
+
+    def fit_screen(self):
+        print(f"Width: {self.width()}, Height: {self.height()}")
+        # Update the transform origin point on window resize
+        self.video_item.setTransformOriginPoint(self.video_item.boundingRect().center())
+        # Make the video item fit the viewport size while maintaining aspect ratio
+        self.view.fitInView(self.video_item, Qt.KeepAspectRatio)
 
     @Slot()
     def take_picture(self):
@@ -129,6 +157,7 @@ class CameraApp(QWidget):
         # Re-enable the button and alert user
         self.capture_button.setEnabled(True)
         QMessageBox.information(self, "Success", f"Picture saved to:\n{path}")
+    
 
 class MainWindow(QMainWindow):
     def __init__(self):
