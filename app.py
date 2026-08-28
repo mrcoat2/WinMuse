@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from PySide6.QtCore import Qt, QPointF, Slot
 from PySide6.QtGui import QAction, QImage, QPixmap, QTransform, QPainter, QPen, QColor, QShowEvent
-from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QGraphicsTransform, QGraphicsRotation, QApplication, QMainWindow, QWidget, QPushButton, QVBoxLayout, QFileDialog, QMessageBox, QLabel, QListWidget, QListWidgetItem, QSplitter, QToolBar, QComboBox, QColorDialog
+from PySide6.QtWidgets import QStackedLayout, QGraphicsScene, QGraphicsView, QGraphicsTransform, QGraphicsRotation, QApplication, QMainWindow, QWidget, QPushButton, QVBoxLayout, QFileDialog, QMessageBox, QLabel, QListWidget, QListWidgetItem, QSplitter, QToolBar, QComboBox, QColorDialog
 from PySide6.QtMultimedia import QCamera, QImageCapture, QMediaCaptureSession
 from PySide6.QtMultimediaWidgets import QVideoWidget, QGraphicsVideoItem
 from PIL import Image
@@ -42,8 +42,6 @@ class PageCanvas(QLabel):
     def mousePressEvent(self, e):
         if e.button() != Qt.LeftButton: return
         if self.mode == "navigate":
-            print(e.position().x())
-            print(self.width())
             if e.position().x() >= self.width()/2: self.main.next_page()
             else: self.main.previous_page()
         else:
@@ -79,13 +77,18 @@ class CameraApp(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PySide6 Camera App")
-        self.resize(517, 704)
+        self.resize(919, 1244)
 
         # 0. Setup scene view
-        self.layout = QVBoxLayout(self)
+        self.main_layout = QVBoxLayout(self)
+        self.content_stack = QStackedLayout()
+
+        self.main_layout.addLayout(self.content_stack)
+
+        self.camera_widget = QWidget()
+        self.camera_layout = QVBoxLayout(self.camera_widget)
         self.scene = QGraphicsScene(self)
         self.view = QGraphicsView(self.scene, self)
-
 
         self.video_item = QGraphicsVideoItem()
         self.scene.addItem(self.video_item)
@@ -106,22 +109,28 @@ class CameraApp(QWidget):
         self.capture_session.setVideoOutput(self.video_item)
 
         self.capture_button = QPushButton("Take Picture")
-        self.capture_button.clicked.connect(self.take_picture)
+        self.capture_button.clicked.connect(self.image_capture.capture)
+        self.image_capture.imageCaptured.connect(self.take_picture)
 
         # Arrange Layout
-        self.layout.addWidget(self.capture_button)
+        self.camera_layout.addWidget(self.capture_button)
+        self.camera_layout.addWidget(self.view)
 
-        self.layout.addWidget(self.view)
+        # Setup the captured content layout
+        self.capture_widget = QWidget()
+        self.capture_layout = QVBoxLayout(self.capture_widget)
 
-        self.setLayout(self.layout)
-        """container = QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)"""
+        # Image capture layout
+        self.image_label = QLabel('No image captured yet')
+        self.image_label.setScaledContents(True)
+        self.capture_layout.addWidget(self.image_label)
+
+        self.content_stack.addWidget(self.camera_widget)
+        self.content_stack.addWidget(self.capture_widget)
 
         # 3. Connect Signals & Start Camera
         self.image_capture.imageSaved.connect(self.on_image_saved)
         self.camera.start()
-        self.fit_screen()
 
     def resizeEvent(self, event):
         """Ensure the rotated video scales correctly when window resizes."""
@@ -141,8 +150,8 @@ class CameraApp(QWidget):
         self.view.fitInView(self.video_item, Qt.KeepAspectRatio)
 
     @Slot()
-    def take_picture(self):
-        # Generate a unique file name using the current timestamp
+    def take_picture(self, request_id, image):
+        """# Generate a unique file name using the current timestamp # Save Image code
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = os.path.join(os.getcwd(), f"captured_{timestamp}.jpg")
         
@@ -150,7 +159,19 @@ class CameraApp(QWidget):
         self.capture_button.setEnabled(False)
         
         # Trigger the image capture
-        self.image_capture.captureToFile(filename)
+        self.image_capture.captureToFile(filename)"""
+        pixmap = QPixmap.fromImage(image)
+        transform = QTransform().rotate(90)
+        pixmap = pixmap.scaled(
+                        self.image_label.size(),
+                        Qt.KeepAspectRatio,
+                        Qt.SmoothTransformation,
+                    )
+        
+        rotated_pixmap = pixmap.transformed(transform, Qt.SmoothTransformation)
+        self.image_label.setPixmap(rotated_pixmap   )
+        print("took picture")
+        self.content_stack.setCurrentIndex(1)
 
     @Slot(int, str)
     def on_image_saved(self, id, path):
