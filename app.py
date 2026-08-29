@@ -2,9 +2,9 @@ import numpy as np
 import sys, cv2
 from datetime import datetime
 from pathlib import Path
-from PySide6.QtCore import Qt, QPointF, Slot
+from PySide6.QtCore import QEvent, Qt, QPointF, Slot
 from PySide6.QtGui import QAction, QImage, QPixmap, QTransform, QPainter, QPen, QColor, QShowEvent
-from PySide6.QtWidgets import QSlider, QStackedLayout, QGraphicsScene, QGraphicsView, QGraphicsTransform, QGraphicsRotation, QApplication, QMainWindow, QWidget, QPushButton, QVBoxLayout, QFileDialog, QMessageBox, QLabel, QListWidget, QListWidgetItem, QSplitter, QToolBar, QComboBox, QColorDialog
+from PySide6.QtWidgets import QGesture, QSlider, QStackedLayout, QGraphicsScene, QGraphicsView, QGraphicsTransform, QGraphicsRotation, QApplication, QMainWindow, QWidget, QPushButton, QVBoxLayout, QFileDialog, QMessageBox, QLabel, QListWidget, QListWidgetItem, QSplitter, QToolBar, QComboBox, QColorDialog
 from PySide6.QtMultimedia import QCamera, QImageCapture, QMediaCaptureSession
 from PySide6.QtMultimediaWidgets import QVideoWidget, QGraphicsVideoItem
 from PIL import Image
@@ -52,6 +52,37 @@ class PageCanvas(QLabel):
         self.last = None
         self.drawing = False
 
+        self.grabGesture(QGesture.PanGesture)
+
+    def event(self, event):
+        if event.type() == QEvent.Gesture:
+            return self.gesture_event(event)
+
+        return super().event(event)
+
+    def gesture_event(self, event):
+        pinch = event.gesture(Qt.PinchGesture)
+
+        if pinch:
+            scale = pinch.scaleFactor()
+            total_scale = pinch.totalScaleFactor()
+
+            print("Scale:", scale)
+            print("Total scale:", total_scale)
+
+            if pinch.state() == Qt.GestureStarted:
+                print("Pinch started")
+
+            elif pinch.state() == Qt.GestureUpdated:
+                print("Pinching")
+
+            elif pinch.state() == Qt.GestureFinished:
+                print("Pinch finished")
+
+            event.accept(pinch)
+
+        return True
+    
     def set_image(self, pix):
         self.base = pix
         self.image = pix.copy()
