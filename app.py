@@ -1,14 +1,42 @@
-import os
-import sys
+import numpy as np
+import sys, cv2
 from datetime import datetime
 from pathlib import Path
 from PySide6.QtCore import Qt, QPointF, Slot
 from PySide6.QtGui import QAction, QImage, QPixmap, QTransform, QPainter, QPen, QColor, QShowEvent
-from PySide6.QtWidgets import QStackedLayout, QGraphicsScene, QGraphicsView, QGraphicsTransform, QGraphicsRotation, QApplication, QMainWindow, QWidget, QPushButton, QVBoxLayout, QFileDialog, QMessageBox, QLabel, QListWidget, QListWidgetItem, QSplitter, QToolBar, QComboBox, QColorDialog
+from PySide6.QtWidgets import QSlider, QStackedLayout, QGraphicsScene, QGraphicsView, QGraphicsTransform, QGraphicsRotation, QApplication, QMainWindow, QWidget, QPushButton, QVBoxLayout, QFileDialog, QMessageBox, QLabel, QListWidget, QListWidgetItem, QSplitter, QToolBar, QComboBox, QColorDialog
 from PySide6.QtMultimedia import QCamera, QImageCapture, QMediaCaptureSession
 from PySide6.QtMultimediaWidgets import QVideoWidget, QGraphicsVideoItem
 from PIL import Image
 import fitz
+
+def qimage_to_cv2(image: QImage):
+    image = image.convertToFormat(QImage.Format.Format_RGBA8888)
+
+    width = image.width()
+    height = image.height()
+
+    ptr = image.bits()
+    arr = np.frombuffer(ptr, dtype=np.uint8)
+
+    arr = arr.reshape((height, width, 4))
+
+    # Convert RGBA → BGR for OpenCV
+    return cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
+
+def cv2_to_qimage(image):
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    height, width, channels = image.shape
+    bytes_per_line = channels * width
+
+    return QImage(
+        image.data,
+        width,
+        height,
+        bytes_per_line,
+        QImage.Format.Format_RGB888
+    ).copy()
 
 class PageCanvas(QLabel):
     def __init__(self, main):
@@ -74,8 +102,10 @@ class PageCanvas(QLabel):
             self.drawing=False; self.last=None; self.main.save_annotation()
 
 class CameraApp(QWidget):
-    def __init__(self):
+    def __init__(self, parent):
         super().__init__()
+        self.parent = parent
+
         self.setWindowTitle("PySide6 Camera App")
         self.resize(919, 1244)
 
@@ -121,10 +151,27 @@ class CameraApp(QWidget):
         self.capture_layout = QVBoxLayout(self.capture_widget)
 
         # Image capture layout
+        self.back_button = QPushButton("Discard")
+        self.back_button.clicked.connect(self.back_to_cam_butt_click)
+        self.capture_layout.addWidget(self.back_button)
+
+        self.keep_photo_butt = QPushButton("Keep Photo")
+        self.keep_photo_butt.clicked.connect(self.keep_photo)
+        self.capture_layout.addWidget(self.keep_photo_butt)
+
+        self.contrast_slider = QSlider(Qt.Horizontal)
+        self.contrast_slider.setMinimum(-100)
+        self.contrast_slider.setMaximum(100)
+        self.contrast_slider.setValue(0)
+        self.contrast_slider.valueChanged.connect(self.contrast_value_changed)
+        self.capture_layout.addWidget(self.contrast_slider)
+
         self.image_label = QLabel('No image captured yet')
+        self.working_image = None
         self.image_label.setScaledContents(True)
         self.capture_layout.addWidget(self.image_label)
-
+        
+        # Add the widgets to stack
         self.content_stack.addWidget(self.camera_widget)
         self.content_stack.addWidget(self.capture_widget)
 
@@ -132,10 +179,68 @@ class CameraApp(QWidget):
         self.image_capture.imageSaved.connect(self.on_image_saved)
         self.camera.start()
 
+    def contrast_value_changed(self, value):
+        print(f"Contrast value changed to: {value}")
+        contrast_factor = value / 100.0 + 1.0
+        """
+        Adjusts contrast. 
+        contrast_factor: 1.0 is original, < 1.0 is lower, > 1.0 is higher.
+        
+        pixmap = self.image_label.pixmap()
+        # 1. Convert QPixmap to QImage (Format_ARGB32 ensures 4 channels)
+        image = pixmap.toImage().convertToFormat(QImage.Format.Format_ARGB32)
+        """
+        image = self.working_image.copy()
+        width, height = image.width(), image.height()
+        
+        # 2. Access the raw pixel data buffer
+        ptr = image.bits()
+        # Create a NumPy array sharing the memory buffer
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape((height, width, 4))
+        
+        # 3. Extract RGB channels (leave Alpha untouched)
+        rgb = arr[:, :, :3].astype(np.float32)
+        
+        # 4. Apply contrast formula: (Pixel - Midpoint) * Factor + Midpoint
+        # 127.5 is the middle gray point of an 8-bit image channel
+        rgb = (rgb - 127.5) * contrast_factor + 127.5
+        
+        # 5. Clip values to valid 0-255 range and cast back to uint8
+        arr[:, :, :3] = np.clip(rgb, 0, 255).astype(np.uint8)
+
+        # 6. Convert back to QPixmap
+        pixmap = QPixmap.fromImage(image)
+        transform = QTransform().rotate(90)
+        pixmap = pixmap.scaled(
+                        self.image_label.size(),
+                        Qt.KeepAspectRatio,
+                        Qt.SmoothTransformation,
+                    )
+        
+        rotated_pixmap = pixmap.transformed(transform, Qt.SmoothTransformation)
+        self.image_label.setPixmap(pixmap)
+
+    @Slot()
+    def keep_photo(self, event):
+        self.parent.add_photo(self.image_label.pixmap().toImage())
+        self.back_to_cam()
+
+    def back_to_cam(self):
+        self.content_stack.setCurrentIndex(0)
+        self.camera.start()
+    
+    @Slot()
+    def back_to_cam_butt_click(self, event):
+        self.back_to_cam()
+    
     def resizeEvent(self, event):
         """Ensure the rotated video scales correctly when window resizes."""
         super().resizeEvent(event)
         self.fit_screen()
+
+    def closeEvent(self, event):
+        self.camera.stop()
+        super().closeEvent(event)
 
     def showEvent(self, event: QShowEvent):
         super().showEvent(event)
@@ -160,7 +265,64 @@ class CameraApp(QWidget):
         
         # Trigger the image capture
         self.image_capture.captureToFile(filename)"""
-        pixmap = QPixmap.fromImage(image)
+        self.camera.stop()
+        self.working_image = image
+
+        cv_image = qimage_to_cv2(image)
+
+        """ This code makes the image not look good
+        gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+
+        # Reduce camera noise
+        gray = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        # Adaptive black/white threshold
+        bw = cv2.adaptiveThreshold(
+            gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            31,
+            12
+        )
+
+        # Clean small artifacts
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        bw = cv2.morphologyEx(bw, cv2.MORPH_OPEN, kernel)
+
+        # Slightly close gaps in letters/lines
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        bw = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, kernel)
+
+        new_image = cv2_to_qimage(bw)"""
+
+        gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
+
+        gray = cv2.fastNlMeansDenoising( # Remove tiny noise
+            gray,
+            None,
+            h=10,
+            templateWindowSize=7,
+            searchWindowSize=21
+        )
+
+        # Increase separation between paper and ink
+        gray = cv2.createCLAHE(
+            clipLimit=2.0,
+            tileGridSize=(8, 8)
+        ).apply(gray)
+
+        bw = cv2.adaptiveThreshold(
+            gray,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            31,
+            10
+        )
+
+        new_image = cv2_to_qimage(bw)
+        pixmap = QPixmap.fromImage(new_image)
         transform = QTransform().rotate(90)
         pixmap = pixmap.scaled(
                         self.image_label.size(),
@@ -169,7 +331,7 @@ class CameraApp(QWidget):
                     )
         
         rotated_pixmap = pixmap.transformed(transform, Qt.SmoothTransformation)
-        self.image_label.setPixmap(rotated_pixmap   )
+        self.image_label.setPixmap(rotated_pixmap)
         print("took picture")
         self.content_stack.setCurrentIndex(1)
 
@@ -204,7 +366,7 @@ class MainWindow(QMainWindow):
             if key: a.setShortcut(key)
             tb.addAction(a)
         act("Open PDF",self.open_pdf,"Ctrl+O")
-        act("Add Photos",self.add_photos)
+        act("Add Photos",self.add_photos_from_file)
         act("Camera",self.open_cam_window)
         act("Export PDF",self.export_pdf,"Ctrl+E")
         tb.addSeparator()
@@ -222,19 +384,24 @@ class MainWindow(QMainWindow):
         tb.addWidget(QLabel("  Orientation: "))
         box=QComboBox(); box.addItems(["Auto","Horizontal","Vertical"]); box.currentTextChanged.connect(self.set_orientation); tb.addWidget(box)
 
-    def add_photos(self):
+    def add_photo(self, image):
+        self.pages.append({"name":str(self.list.count()),"image":image,"pixmap":None,"rotation":0})
+        self.list.addItem(QListWidgetItem(str(self.list.count())))
+        if self.pages: self.list.setCurrentRow(0)
+
+    def add_photos_from_file(self):
         fs,_=QFileDialog.getOpenFileNames(self,"Add Sheet Music Photos","","Images (*.png *.jpg *.jpeg *.bmp *.webp)")
         for f in fs:
+            print(f)
             img=QImage(f)
             if not img.isNull():
-                self.pages.append({"name":Path(f).name,"image":img,"pixmap":None,"rotation":0})
-                self.list.addItem(QListWidgetItem(Path(f).name))
+                self.add_photo(img)
         if self.pages: self.list.setCurrentRow(0)
 
     def open_cam_window(self):
             # Only create the window if it doesn't exist yet
             if self.cam_window is None:
-                self.cam_window = CameraApp()
+                self.cam_window = CameraApp(self)
             
             self.cam_window.show()
 
