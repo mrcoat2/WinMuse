@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 from PySide6.QtCore import Qt, QPointF
-from PySide6.QtGui import QAction, QImage, QPixmap, QTransform
+from PySide6.QtGui import QAction, QColor, QImage, QPixmap, QTransform
 from PySide6.QtWidgets import QApplication, QMainWindow, QFileDialog, QMessageBox, QLabel, QListWidget, QListWidgetItem, QSplitter, QToolBar, QComboBox, QColorDialog
 from PIL import Image
 import fitz
@@ -18,6 +18,7 @@ class MainWindow(QMainWindow):
         self.cam_window = None
 
         self.canvas=PageCanvas(self)
+        self.canvas.color = QColor(0, 0, 0) # Default color black
         self.list=QListWidget(); self.list.setMaximumWidth(240)
         self.list.currentRowChanged.connect(self.select_page)
         split=QSplitter(); split.addWidget(self.list); split.addWidget(self.canvas); split.setStretchFactor(1,1)
@@ -153,19 +154,56 @@ class MainWindow(QMainWindow):
         else:super().keyPressEvent(e)
 
     def export_pdf(self):
-        if not self.pages:return
-        f,_=QFileDialog.getSaveFileName(self,"Export Annotated PDF","sheet_music_annotated.pdf","PDF Files (*.pdf)")
-        if not f:return
+        if not self.pages:
+            return
+
+        f, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Annotated PDF",
+            "sheet_music_annotated.pdf",
+            "PDF Files (*.pdf)"
+        )
+
+        if not f:
+            return
+
         try:
-            self.save_annotation(); ims=[]
+            self.save_annotation()
+            ims = []
+
             for p in self.pages:
-                pm=p["pixmap"] or self.base_pixmap(p)
-                q=pm.toImage().convertToFormat(QImage.Format_RGB888)
-                ptr=q.constBits(); ptr.setsize(q.sizeInBytes())
-                ims.append(Image.frombuffer("RGB",(q.width(),q.height()),bytes(ptr),"raw","RGB",q.bytesPerLine(),1).copy())
-            ims[0].save(f,"PDF",resolution=150,save_all=True,append_images=ims[1:])
-            QMessageBox.information(self,"Exported",f"Saved:\n{f}")
-        except Exception as e: QMessageBox.critical(self,"Export error",str(e))
+                pm = p["pixmap"] or self.base_pixmap(p)
+
+                q = pm.toImage().convertToFormat(QImage.Format_RGB888)
+
+                # PySide6 constBits() returns a memoryview
+                ptr = q.constBits()
+                data = bytes(ptr)
+
+                ims.append(
+                    Image.frombuffer(
+                        "RGB",
+                        (q.width(), q.height()),
+                        data,
+                        "raw",
+                        "RGB",
+                        q.bytesPerLine(),
+                        1
+                    ).copy()
+                )
+
+            ims[0].save(
+                f,
+                "PDF",
+                resolution=150,
+                save_all=True,
+                append_images=ims[1:]
+            )
+
+            QMessageBox.information(self, "Exported", f"Saved:\n{f}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Export error", str(e))
 
 def main():
     app=QApplication(sys.argv); w=MainWindow(); w.show(); sys.exit(app.exec())

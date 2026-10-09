@@ -47,7 +47,8 @@ class PageCanvas(QLabel):
             center = pinch.centerPoint()
 
             if pinch.state() == Qt.GestureStarted:
-                print("Pinch started")
+                # print("Pinch started")
+                pass
 
             elif pinch.state() == Qt.GestureUpdated:
                 self.zoom_at(
@@ -56,7 +57,8 @@ class PageCanvas(QLabel):
                 )
 
             elif pinch.state() == Qt.GestureFinished:
-                print("Pinch finished")
+                # print("Pinch finished")
+                pass
 
             event.accept(pinch)
             return True
@@ -71,18 +73,18 @@ class PageCanvas(QLabel):
         self.base = pix
         self.image = pix.copy()
 
-        self.zoom = 1.0
+        # self.zoom = 1.0
 
         # Center image
-        self.offset = QPointF(
+        """self.offset = QPointF(
             (self.width() - self.image.width()) / 2,
             (self.height() - self.image.height()) / 2
-        )
+        )"""
 
         self.refresh()
 
     def zoom_at(self, center, factor):
-        print(f"Zooming at {center}, factor: {factor}")
+        # print(f"Zooming at {center}, factor: {factor}")
         if self.image.isNull():
             return
 

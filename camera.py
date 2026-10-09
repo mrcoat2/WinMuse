@@ -202,9 +202,9 @@ class CameraApp(QWidget):
         self.camera.stop()
         self.working_image = image
 
-        cv_image = qimage_to_cv2(image)
+        """cv_image = qimage_to_cv2(image)
 
-        """ This code makes the image not look good
+        # This code makes the image not look good
         gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
 
         # Reduce camera noise
@@ -228,7 +228,7 @@ class CameraApp(QWidget):
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
         bw = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, kernel)
 
-        new_image = cv2_to_qimage(bw)"""
+        new_image = cv2_to_qimage(bw)
 
         gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
 
@@ -256,14 +256,14 @@ class CameraApp(QWidget):
         )
 
         new_image = cv2_to_qimage(bw)
-        pixmap = QPixmap.fromImage(new_image)
+        """
+        pixmap = QPixmap.fromImage(image)
         transform = QTransform().rotate(90)
         pixmap = pixmap.scaled(
                         self.image_label.size(),
                         Qt.KeepAspectRatio,
                         Qt.SmoothTransformation,
                     )
-        
         rotated_pixmap = pixmap.transformed(transform, Qt.SmoothTransformation)
         self.image_label.setPixmap(rotated_pixmap)
         print("took picture")
