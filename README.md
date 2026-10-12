@@ -1,8 +1,8 @@
 # WinMuse
 
-Install:
-Run the provided executable
-[Download the Latest Release](https://github.com)
+# Install 
+Run the provided executable 
+[Download the Latest Release](https://github.com/mrcoat2/WinMuse/releases)
 or run from source
 `py -m pip install -r requirements.txt`
 `py app.py`
